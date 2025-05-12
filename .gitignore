@@ -27,7 +27,7 @@ proteus/*.workspace
 proteus/*.LAPTOP-*.workspace
 
 # Research PDF (optional to version)
-research- autonomos seed sowing robot.pdf
+*.pdf
 
 # CPU temp file
 cpu=16f877a

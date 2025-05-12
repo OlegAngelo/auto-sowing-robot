@@ -18,14 +18,14 @@ void delay(int time)
     }
 }
 
-void goForward(void) {
-    // keep bits 6-7, set bits 0-5 to 0011 0101 (0x35)
-    PORTD = (PORTD & 0xC0) | 0x35;
+void goBackward(void) {
+    // keep bits 6-7, set bits 0-5 to 0011 0110 (0x35)
+    PORTD = (PORTD & 0xC0) | 0x36;
 }
 
-void goBackward(void) {
-    // keep bits 6-7, set bits 0-5 to 0011 1010 (0x3A)
-    PORTD = (PORTD & 0xC0) | 0x3A;
+void goForward(void) {
+    // keep bits 6-7, set bits 0-5 to 0011 1001 (0x3A)
+    PORTD = (PORTD & 0xC0) | 0x39;
 }
 
 void stopMotors(void) {
