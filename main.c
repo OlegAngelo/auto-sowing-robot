@@ -11,8 +11,22 @@
 #pragma config CP = OFF
 
 // for keypad
-int keypadFlag = 0;				 // keypad flag
 unsigned char keypadData = 0x00; // keypad data in hex
+
+// int previousState = 0;
+int robotState = 0;  // 0: idle, 1: opmode
+int previousState; // track the previous state
+int rowsToPlant = 0;
+unsigned char outputText[15];
+const char* idleModeText = "==IDLE MODE==";
+const char* operationModeText = "==OPERATION MODE==";
+const char* questionText = "Rows to plant:";
+const char* drillingText = "Drilling...";
+const char* plantingText = "Planting...";
+const char* travellingText = "Travelling...";
+const char* blankLine = "                      ";
+int stopRequested = 0;  // global flag to exit operation mode early
+
 
 void delay(int time)
 {
@@ -45,10 +59,10 @@ void initLCD() {
     delay(50);       // Wait for power-up
 
     instCtrl(0x3C); // function set: 8-bit; dual-line
-	instCtrl(0x38); // display off
-	instCtrl(0x01); // display clear
-	instCtrl(0x06); // entry mode: increment; shift off
-	instCtrl(0x0C); // display on; cursor off; blink off
+    instCtrl(0x38); // display off
+    instCtrl(0x01); // display clear
+    instCtrl(0x06); // entry mode: increment; shift off
+    instCtrl(0x0C); // display on; cursor off; blink off
 
 }
 
@@ -59,12 +73,12 @@ void printLCD(const char *str) {
 }
 
 void goBackward(void) {
-    // keep bits 6-7, set bits 0-5 to 0011 0110 (0x35)
+    // keep bits 6-7, set bits 0-5 to 0011 0110 (0x36)
     PORTD = (PORTD & 0xC0) | 0x36;
 }
 
 void goForward(void) {
-    // keep bits 6-7, set bits 0-5 to 0011 1001 (0x3A)
+    // keep bits 6-7, set bits 0-5 to 0011 1001 (0x39)
     PORTD = (PORTD & 0xC0) | 0x39;
 }
 
@@ -91,7 +105,7 @@ void setLedState(int opmode) {
 
 // Optional mapping if needed (only using 1-9). Adjust based on your keypad layout.
 char processKeypadInput() {
-    delay(20);
+    delay(5);
 
     switch (keypadData) {
         case 0x00: return '1';
@@ -103,6 +117,7 @@ char processKeypadInput() {
         case 0x08: return '7';
         case 0x09: return '8';
         case 0x0A: return '9';
+        case 0x0D: return '0';
         default: return ' ';
     }
 }
@@ -121,63 +136,160 @@ void portConfigs (void) {
     ADCON1 = 0x06; // port a pins are set to digital i/o
 }
 
+void drillMode (void) {
+    stopMotors();
+    instCtrl(0xD7);
+    printLCD(blankLine);
+    instCtrl(0xD8);
+    printLCD(drillingText);
+    delay(1000);
+}
+
+void plantMode (void) {
+    instCtrl(0xD8);
+    printLCD(blankLine);
+    instCtrl(0xD8);
+    printLCD(plantingText);
+    delay(1000);
+}
+
+void travelMode (void) {
+    instCtrl(0xD8);
+    printLCD(blankLine);
+    instCtrl(0xD8);
+    printLCD(travellingText);
+    goForward();
+    delay(1000);
+}
+
+void operationDone (void) {
+    stopMotors();
+    instCtrl(0xD7);
+    printLCD(blankLine);
+    instCtrl(0xD7);
+    printLCD("Operation done.");
+}
+
+void updateRowCount (int intRowCount) {
+    instCtrl(0xCF);
+    printLCD("   ");
+    instCtrl(0xCF);
+    sprintf(outputText, "%d", intRowCount);
+    printLCD(outputText);
+}
+
+void resetDisplay (void) {
+    instCtrl(0x81);
+    printLCD(blankLine);
+    instCtrl(0x84); 
+    printLCD(idleModeText);
+}
+
+void btnPress(void) {
+    if (RB0 == 1) {
+        delay(5);
+        if (RB0 == 1) {
+            while (RB0 == 1); // Debounce: wait for release
+
+            if (robotState == 0 && rowsToPlant >= 1 && rowsToPlant <= 999) {
+                robotState = 1;
+                setLedState(robotState);
+            } else if (robotState == 1) {
+                stopRequested = 1;  // <-- just set this flag
+            }
+        }
+    }
+}
+
 void main(void) {
-    int robotState = 0; // 0: idle, 1: opmode
-    int previousState = robotState; // track the previous state
-    unsigned char rowsToPlant;
-    const char* idleModeText = "IDLE MODE...";
-    const char* question = "Rows to plant:";
-    unsigned char outputText[15];
+    previousState = robotState;
 
     portConfigs(); 
 
     initLCD();
 
-    instCtrl(0x02); // set cursor 1st line col 2
-    printLCD(question);
-
-    instCtrl(0xD9); // set cursor 4th line
+    instCtrl(0x84); // set cursor 1st line col 9
     printLCD(idleModeText);
+
+    instCtrl(0xC0); // set cursor 2nd line col 2
+    printLCD(questionText);
 
     setLedState(robotState); // idle mode initial
     stopMotors();
 
     while (1) {
-        if (RB0 == 1) { // button pressed
-            delay(50);
+        btnPress();
 
-            if (RB0 == 1) { // confirm press
-                robotState ^= 1; // toggle robot state
+        // logic for changing robot state
+        if (robotState != previousState) {
+            if (robotState == 1 && rowsToPlant >= 1 && rowsToPlant <= 999) {
+                int intRowCount = rowsToPlant;
+
+                instCtrl(0x81); // Line 1, col 5
+                printLCD(operationModeText);
+
+                while (intRowCount > 0  && robotState == 1) {
+                   
+                    drillMode();
+                  
+                    plantMode();
+
+                    travelMode();
+
+                    intRowCount--;
+
+                    updateRowCount(intRowCount);
+                    
+                    if (stopRequested) {
+                        stopMotors();
+                        robotState = 0;
+                        setLedState(robotState);
+                        instCtrl(0x81);
+                        printLCD(idleModeText);
+                        rowsToPlant = 0;
+                        stopRequested = 0;  // reset flag
+                        break;
+                    }
+                }
+
+                operationDone();
+
+                robotState = 0;
                 setLedState(robotState);
 
-                while (RB0 == 1); // wait until button is released
+                resetDisplay();
+
+                rowsToPlant = 0; // reset input
             }
+
+            previousState = robotState;
         }
 
-        if (robotState != previousState) {
-            if (robotState == 0) {
-                stopMotors();
+        // logic for keypad input (multi-digit), can only access if idle mode
+        if ((RA4 == 1) && (!robotState))
+        {
+            keypadData = PORTA & 0x0F; // mask data
+            char key = processKeypadInput();
+
+            if (key >= '0' && key <= '9') {
+                if (rowsToPlant < 100) {  // only allow up to 3 digits
+                    rowsToPlant = rowsToPlant * 10 + (key - '0');
+
+                    instCtrl(0xCF);        // adjust to your LCD position
+                    printLCD("  ");       // clear previous number
+                    instCtrl(0xCF);
+                    sprintf(outputText, "%d", rowsToPlant);
+                    printLCD(outputText);
+                }
             }
-            else {
-                goForward();
+            // clear input for other keys
+            else if (key == ' ') {
+                rowsToPlant = 0;
+                instCtrl(0xCF);
+                printLCD("    ");
             }
 
-            previousState = robotState; // update previousState
+            while (RA4 == 1); // debounce
         }
-
-        /* logic for keypad */
-        /* can only access if idle mode */
-		if ((RA4 == 1) && (robotState == 0))
-		{
-		    keypadData = PORTA & 0x0F; // mask data
-
-			rowsToPlant = processKeypadInput();
-
-            instCtrl(0x8F); // set cursor to line 1 col 15
-            sprintf(outputText, "%c", rowsToPlant);
-            printLCD(outputText);
-
-            while (RA4 == 1);
-		}
     }
 }
