@@ -17,6 +17,8 @@ int robotState = 0;  // 0: idle, 1: opmode
 int previousState; // track the previous state
 int rowsToPlant = 0;
 int stopRequested = 0;  // global flag to exit operation mode early
+int previousEncoderState = 0;
+int encoderCount = 0;
 
 const char* idleModeText = "==IDLE MODE==";
 const char* operationModeText = "==OPERATION MODE==";
@@ -289,7 +291,14 @@ void main(void) {
                   
                     plantMode();
 
-                    travelMode();
+                    while (encoderCount < 2) {
+                        travelMode();
+                        if(previousEncoderState != RB1 && RB1 == 1) {
+                            encoderCount++;
+                        }
+                        previousEncoderState = RB1;
+                    }
+                    encoderCount = 0; //reset encoder count
 
                     intRowCount--;
 
