@@ -1,5 +1,5 @@
 #include <xc.h>
-#include <stdio.h> // For sprintf
+#include <stdio.h> // for sprintf
 
 #pragma config FOSC = XT
 #pragma config WDTE = OFF
@@ -10,14 +10,14 @@
 #pragma config WRT = OFF
 #pragma config CP = OFF
 
-// for keypad
 unsigned char keypadData = 0x00; // keypad data in hex
+unsigned char outputText[15];
 
-// int previousState = 0;
 int robotState = 0;  // 0: idle, 1: opmode
 int previousState; // track the previous state
 int rowsToPlant = 0;
-unsigned char outputText[15];
+int stopRequested = 0;  // global flag to exit operation mode early
+
 const char* idleModeText = "==IDLE MODE==";
 const char* operationModeText = "==OPERATION MODE==";
 const char* questionText = "Rows to plant:";
@@ -25,8 +25,6 @@ const char* drillingText = "Drilling...";
 const char* plantingText = "Planting...";
 const char* travellingText = "Travelling...";
 const char* blankLine = "                      ";
-int stopRequested = 0;  // global flag to exit operation mode early
-
 
 void delay(int time)
 {
@@ -38,7 +36,7 @@ void delay(int time)
 }
 
 void instCtrl(unsigned char data) {
-    PORTC = data;
+    PORTD = data;
     RB5 = 0;  // RS = 0 for instruction
     RB6 = 0;  // RW = 0 for write
     RB7 = 1;  // EN = 1 to start pulse
@@ -47,7 +45,7 @@ void instCtrl(unsigned char data) {
 }
 
 void dataCtrl(unsigned char data) {
-    PORTC = data;
+    PORTD = data;
     RB5 = 1;  // RS = 1 for data
     RB6 = 0;  // RW = 0 for write
     RB7 = 1;  // EN = 1 to start pulse
@@ -63,7 +61,6 @@ void initLCD() {
     instCtrl(0x01); // display clear
     instCtrl(0x06); // entry mode: increment; shift off
     instCtrl(0x0C); // display on; cursor off; blink off
-
 }
 
 void printLCD(const char *str) {
@@ -72,34 +69,30 @@ void printLCD(const char *str) {
     }
 }
 
-void goBackward(void) {
-    // keep bits 6-7, set bits 0-5 to 0011 0110 (0x36)
-    PORTD = (PORTD & 0xC0) | 0x36;
+void goForward(void) {
+    // IN1–IN4 = 1001 => RC7=1, RC6=0, RC5=0, RC4=1
+    // Mask bits 4–7: clear and set accordingly
+    PORTC = (PORTC & 0x0F) | 0x90; // 1001 0000 = 0x90
 }
 
-void goForward(void) {
-    // keep bits 6-7, set bits 0-5 to 0011 1001 (0x39)
-    PORTD = (PORTD & 0xC0) | 0x39;
+void goBackward(void) {
+    // IN1–IN4 = 0110 => RC7=0, RC6=1, RC5=1, RC4=0
+    PORTC = (PORTC & 0x0F) | 0x60; // 0110 0000 = 0x60
 }
 
 void stopMotors(void) {
-    // keep bits 6-7, clear bits 0-5
-    PORTD &= 0xC0;
-}
-
-void ledStateAndDcMotorsConfig(void) {
-    TRISD = 0x00; // set ports D as output
-    PORTD = 0x00; // initialize to off
+    // Clear IN1–IN4 bits (RC4–RC7), preserve lower nibble (RC0–RC3)
+    PORTC &= 0x0F;
 }
 
 void setLedState(int opmode) {
     if (opmode) {
-        RD6 = 0; // led-red OFF
-        RD7 = 1; // led-green ON
+        RC0 = 0; // led-red OFF
+        RC3 = 1; // led-green ON
     }
     else {
-        RD6 = 1; // led-red ON
-        RD7 = 0; // led-green OFF
+        RC0 = 1; // led-red ON
+        RC3 = 0; // led-green OFF
     }
 }
 
@@ -125,13 +118,13 @@ char processKeypadInput() {
 void portConfigs (void) {
     TRISA = 0xFF; // input keypad (74C922)
     TRISB = 0x0F; // input button bit 0 / output lcd bits 5:7
-    TRISC = 0x00; // LCD output
-    TRISD = 0x00; // set ports D as output to motors
+    TRISC = 0x00; // output to motors
+    TRISD = 0x00; // LCD output
 
     PORTA = 0x00; // keypad input
     PORTB = 0x00; // btn & lcd(rs, rw, e)
-    PORTC = 0x00; // lcd data output
-    PORTD = 0x00; // motors & led (robot state) 
+    PORTC = 0x00; // motors & led (robot state) 
+    PORTD = 0x00; // lcd data output
 
     ADCON1 = 0x06; // port a pins are set to digital i/o
 }
@@ -201,6 +194,57 @@ void btnPress(void) {
     }
 }
 
+void setInitialDisplay (void) {
+    instCtrl(0x84); // set cursor 1st line col 9
+    printLCD(idleModeText);
+
+    instCtrl(0xC0); // set cursor 2nd line col 2
+    printLCD(questionText);
+}
+
+void initPWM(void) {
+    // set RC1 and RC2 as output (PWM pins)
+    TRISC1 = 0; // CCP2 pin output
+    TRISC2 = 0; // CCP1 pin output
+
+    // timer2 configuration
+    T2CON = 0; // Clear Timer2 control register
+    T2CON = 0x01; // Prescaler = 4, Timer2 off initially 
+    PR2 = 124; // Period register: controls PWM frequency
+
+    // CCP1 and CCP2 in PWM mode
+    CCP1CON = 0x0C; // PWM mode for CCP1
+    CCP2CON = 0x0C; // PWM mode for CCP2
+
+    // clear duty cycle bits 4 and 5 before setting duty cycle
+    CCP1CON &= 0xCF; // clear bits 4 and 5 (DC1B1 and DC1B0)
+    CCP2CON &= 0xCF; // clear bits 4 and 5 (DC2B1 and DC2B0)
+
+    // start timer2
+    TMR2ON = 1;
+
+    // set initial duty cycle to ~25%
+    CCPR1L = 64; // high 8 bits of duty cycle for CCP1
+    CCPR2L = 64; // high 8 bits of duty cycle for CCP2
+}
+
+void setMotorSpeedLeft(unsigned int duty) {
+    if (duty > 1023) duty = 1023;
+    CCPR2L = duty >> 2;
+    CCP2CON = (CCP2CON & 0xCF) | ((duty & 0x03) << 4);
+}
+
+void setMotorSpeedRight(unsigned int duty) {
+    if (duty > 1023) duty = 1023;
+    CCPR1L = duty >> 2;
+    CCP1CON = (CCP1CON & 0xCF) | ((duty & 0x03) << 4);
+}
+
+void setMotorSpeed (unsigned int value) {
+    setMotorSpeedLeft(value);
+    setMotorSpeedRight(value);
+}
+
 void main(void) {
     previousState = robotState;
 
@@ -208,11 +252,22 @@ void main(void) {
 
     initLCD();
 
-    instCtrl(0x84); // set cursor 1st line col 9
-    printLCD(idleModeText);
+    setInitialDisplay();
+    
+    initPWM();
 
-    instCtrl(0xC0); // set cursor 2nd line col 2
-    printLCD(questionText);
+    /* 
+    * if motors sound rough, reduce duty slightly.
+    * if they don’t spin, increase duty.
+    * lower PR2 = faster PWM frequency (shorter cycle time).
+    * higher PR2 = slower PWM frequency (longer cycle time).
+    * check info on notes for more info
+    * 
+    * setMotorSpeed(256);   // ~25%
+    * setMotorSpeed(768);   // ~75%
+    * setMotorSpeed(1023);   // ~1000%
+    */
+    setMotorSpeed(512);   // ~50%
 
     setLedState(robotState); // idle mode initial
     stopMotors();
