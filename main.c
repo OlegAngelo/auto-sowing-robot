@@ -16,17 +16,18 @@ unsigned char outputText[15];
 int robotState = 0;  // 0: idle, 1: opmode
 int previousState; // track the previous state
 int rowsToPlant = 0;
-int stopRequested = 0;  // global flag to exit operation mode early
 int previousEncoderState = 0;
 int encoderCount = 0;
 
 const char* idleModeText = "==IDLE MODE==";
 const char* operationModeText = "==OPERATION MODE==";
 const char* questionText = "Rows to plant:";
+const char* infoText = "*/# - Delete";
+const char* startText = "Push button to start";
 const char* drillingText = "Drilling...";
 const char* plantingText = "Planting...";
 const char* travellingText = "Travelling...";
-const char* blankLine = "                      ";
+const char* blankLine = "                          ";
 
 void delay(int time)
 {
@@ -56,7 +57,7 @@ void dataCtrl(unsigned char data) {
 }
 
 void initLCD() {
-    delay(50);       // Wait for power-up
+    delay(25);       // Wait for power-up
 
     instCtrl(0x3C); // function set: 8-bit; dual-line
     instCtrl(0x38); // display off
@@ -133,33 +134,30 @@ void portConfigs (void) {
 
 void drillMode (void) {
     stopMotors();
-    instCtrl(0xD7);
+    instCtrl(0xD4);
     printLCD(blankLine);
     instCtrl(0xD8);
     printLCD(drillingText);
-    delay(1000);
 }
 
 void plantMode (void) {
-    instCtrl(0xD8);
+    instCtrl(0xD4);
     printLCD(blankLine);
     instCtrl(0xD8);
     printLCD(plantingText);
-    delay(1000);
 }
 
 void travelMode (void) {
-    instCtrl(0xD8);
+    instCtrl(0xD4);
     printLCD(blankLine);
     instCtrl(0xD8);
     printLCD(travellingText);
     goForward();
-    delay(1000);
 }
 
 void operationDone (void) {
     stopMotors();
-    instCtrl(0xD7);
+    instCtrl(0xD4);
     printLCD(blankLine);
     instCtrl(0xD7);
     printLCD("Operation done.");
@@ -176,24 +174,12 @@ void updateRowCount (int intRowCount) {
 void resetDisplay (void) {
     instCtrl(0x81);
     printLCD(blankLine);
+
     instCtrl(0x84); 
     printLCD(idleModeText);
-}
 
-void btnPress(void) {
-    if (RB0 == 1) {
-        delay(5);
-        if (RB0 == 1) {
-            while (RB0 == 1); // Debounce: wait for release
-
-            if (robotState == 0 && rowsToPlant >= 1 && rowsToPlant <= 999) {
-                robotState = 1;
-                setLedState(robotState);
-            } else if (robotState == 1) {
-                stopRequested = 1;  // <-- just set this flag
-            }
-        }
-    }
+    instCtrl(0x94); // set cursor 3rd line col 2
+    printLCD(infoText);
 }
 
 void setInitialDisplay (void) {
@@ -202,6 +188,12 @@ void setInitialDisplay (void) {
 
     instCtrl(0xC0); // set cursor 2nd line col 2
     printLCD(questionText);
+
+    instCtrl(0x94); // set cursor 3rd line col 2
+    printLCD(infoText);
+
+    instCtrl(0xD4); // set cursor 4th line col 2
+    printLCD(startText);
 }
 
 void initPWM(void) {
@@ -247,6 +239,42 @@ void setMotorSpeed (unsigned int value) {
     setMotorSpeedRight(value);
 }
 
+void btnPress(void) {
+    delay(5);
+
+    if (robotState == 0 && rowsToPlant >= 1 && rowsToPlant <= 999) {
+        robotState = 1;
+    } else if (robotState == 1) {
+        robotState = 0;
+    }
+        
+    setLedState(robotState);
+}
+
+void interruptConfig(void) {
+	OPTION_REG = 0xC4; // 1100 0100
+	INTE = 1; // int enable
+	INTF = 0; // int flag clear
+
+    PEIE = 1;
+    GIE = 1;
+}
+
+void interrupt ISR (void) {
+    GIE = 0;
+
+	if (INTF) { // check rb0 interrupt
+		INTF = 0;
+
+        if (RB0 == 1) {
+            btnPress();     // Only respond if still pressed after debounce
+            while (RB0 == 1); // Wait for release to prevent re-trigger
+        }
+	}
+
+    GIE = 1;
+}
+
 void main(void) {
     previousState = robotState;
 
@@ -257,6 +285,8 @@ void main(void) {
     setInitialDisplay();
     
     initPWM();
+
+    interruptConfig(); // rb0/int
 
     /* 
     * if motors sound rough, reduce duty slightly.
@@ -275,8 +305,6 @@ void main(void) {
     stopMotors();
 
     while (1) {
-        btnPress();
-
         // logic for changing robot state
         if (robotState != previousState) {
             if (robotState == 1 && rowsToPlant >= 1 && rowsToPlant <= 999) {
@@ -291,6 +319,7 @@ void main(void) {
                   
                     plantMode();
 
+                    // travelMode();
                     while (encoderCount < 2) {
                         travelMode();
                         if(previousEncoderState != RB1 && RB1 == 1) {
@@ -303,17 +332,6 @@ void main(void) {
                     intRowCount--;
 
                     updateRowCount(intRowCount);
-                    
-                    if (stopRequested) {
-                        stopMotors();
-                        robotState = 0;
-                        setLedState(robotState);
-                        instCtrl(0x81);
-                        printLCD(idleModeText);
-                        rowsToPlant = 0;
-                        stopRequested = 0;  // reset flag
-                        break;
-                    }
                 }
 
                 operationDone();
