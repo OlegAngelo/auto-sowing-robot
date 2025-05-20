@@ -132,7 +132,7 @@ void portConfigs (void) {
     TRISE = 0x00; // Servo
 
     PORTA = 0x00; // keypad input
-    PORTB = 0x00; // btn & lcd(rs, rw, e)
+    PORTB = 0x00; // btn & lcd(rs, rw, e) & rotary
     PORTC = 0x00; // motors & led (robot state) 
     PORTD = 0x00; // lcd data output
     PORTE = 0x00; // Servo output
@@ -141,7 +141,6 @@ void portConfigs (void) {
 }
 
 void setServoAngle(int angle, int part) {
-    //if (angle > 180) angle = 180;
     // servo_pulse_us = (850 + ((long)angle * 1150)/180);
     servo_pulse_us = angle;
     servoPart = part;
@@ -191,6 +190,7 @@ void travelMode (void) {
     printLCD(blankLine);
     instCtrl(0xD8);
     printLCD(travellingText);
+
     goForward();
 }
 
@@ -235,29 +235,26 @@ void setInitialDisplay (void) {
     printLCD(startText);
 }
 
+/* config for dc motors */
 void initPWM(void) {
     // set RC1 and RC2 as output (PWM pins)
     TRISC1 = 0; // CCP2 pin output
-    TRISC2 = 0; // CCP1 pin output
 
     // timer2 configuration
     T2CON = 0; // Clear Timer2 control register
     T2CON = 0x01; // Prescaler = 4, Timer2 off initially 
     PR2 = 124; // Period register: controls PWM frequency
 
-    // CCP1 and CCP2 in PWM mode
-    CCP1CON = 0x0C; // PWM mode for CCP1
+    // CCP2 in PWM mode
     CCP2CON = 0x0C; // PWM mode for CCP2
 
     // clear duty cycle bits 4 and 5 before setting duty cycle
-    CCP1CON &= 0xCF; // clear bits 4 and 5 (DC1B1 and DC1B0)
     CCP2CON &= 0xCF; // clear bits 4 and 5 (DC2B1 and DC2B0)
 
     // start timer2
     TMR2ON = 1;
 
     // set initial duty cycle to ~50%
-    CCPR1L = 64; // high 8 bits of duty cycle for CCP1
     CCPR2L = 64; // high 8 bits of duty cycle for CCP2
 }
 
@@ -300,11 +297,14 @@ void interrupt ISR (void) {
     if (TMR1IF) {
         TMR1IF = 0;
         TMR1 = TMR1_RELOAD;
+
         if(servoPart) RE0 = 1;   // start of servo pulse
         else RE1 = 1;
+
         // schedule end of pulse
         CCPR1 = TMR1_RELOAD + servo_pulse_us;
     }
+
     if (CCP1IF) {
         CCP1IF = 0;
         if(servoPart) RE0 = 0;   // end of pulse
@@ -323,13 +323,15 @@ void main(void) {
 
     setInitialDisplay();
     
-    initPWM();
+    /* uncomment if using PWM for wheels */
+    // initPWM();
 
     initServo();
 
     interruptConfig(); // rb0/int
 
     /* 
+    * uncomment if using PWM for dc motors below
     * if motors sound rough, reduce duty slightly.
     * if they don’t spin, increase duty.
     * lower PR2 = faster PWM frequency (shorter cycle time).
@@ -337,10 +339,10 @@ void main(void) {
     * check info on notes for more info
     * 
     * setMotorSpeed(256);   // ~25%
+    * setMotorSpeed(512);   // ~50%
     * setMotorSpeed(768);   // ~75%
     * setMotorSpeed(1023);   // ~1000%
     */
-    setMotorSpeed(512);   // ~50%
 
     setLedState(robotState); // idle mode initial
     stopMotors();
@@ -370,11 +372,12 @@ void main(void) {
 
                     if (robotState == 0) break;
 
-                    travelMode();
-                    delay(100);
+                    /* uncomment below for testing without rotary */
+                    // travelMode();
+                    // delay(100);
+                    // if (robotState == 0) break;
 
-                    if (robotState == 0) break;
-
+                    /* rotary encoder logic */
                     while (encoderCount < 2) {
                         travelMode();
 
