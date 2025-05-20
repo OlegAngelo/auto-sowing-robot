@@ -256,8 +256,8 @@ void interruptConfig(void) {
 	INTE = 1; // int enable
 	INTF = 0; // int flag clear
 
-    PEIE = 1;
-    GIE = 1;
+    // PEIE = 1;
+    // GIE = 1;
 }
 
 void interrupt ISR (void) {
