@@ -13,7 +13,7 @@
 unsigned char keypadData = 0x00; // keypad data in hex
 unsigned char outputText[15];
 
-int robotState = 0;  // 0: idle, 1: opmode
+volatile int robotState = 0;  // 0: idle, 1: opmode
 int previousState; // track the previous state
 int rowsToPlant = 0;
 int previousEncoderState = 0;
@@ -27,7 +27,13 @@ const char* startText = "Push button to start";
 const char* drillingText = "Drilling...";
 const char* plantingText = "Planting...";
 const char* travellingText = "Travelling...";
-const char* blankLine = "                          ";
+const char* blankLine = "                      ";
+
+int servo_pulse_us = 1000;   // default 1.5 ms
+int angle = 0;
+int servoPart = 1;
+
+#define TMR1_RELOAD        (65536 - 20000)
 
 void delay(int time)
 {
@@ -123,13 +129,36 @@ void portConfigs (void) {
     TRISB = 0x0F; // input button bit 0 / output lcd bits 5:7
     TRISC = 0x00; // output to motors
     TRISD = 0x00; // LCD output
+    TRISE = 0x00; // Servo
 
     PORTA = 0x00; // keypad input
     PORTB = 0x00; // btn & lcd(rs, rw, e)
     PORTC = 0x00; // motors & led (robot state) 
     PORTD = 0x00; // lcd data output
+    PORTE = 0x00; // Servo output
 
     ADCON1 = 0x06; // port a pins are set to digital i/o
+}
+
+void setServoAngle(int angle, int part) {
+    //if (angle > 180) angle = 180;
+    // servo_pulse_us = (850 + ((long)angle * 1150)/180);
+    servo_pulse_us = angle;
+    servoPart = part;
+}
+
+void initServo(void) {
+    T1CON = 0b00000001;  
+    TMR1 = TMR1_RELOAD;  
+    TMR1IF = 0;          
+    TMR1IE = 1;   
+   
+    CCP1CON = 0x08;       
+    CCP1IF = 0;         
+    CCP1IE = 1;   
+
+    setServoAngle(0, 1);
+    setServoAngle(150, 0);
 }
 
 void drillMode (void) {
@@ -138,6 +167,11 @@ void drillMode (void) {
     printLCD(blankLine);
     instCtrl(0xD8);
     printLCD(drillingText);
+
+    // servo
+    setServoAngle(2000, 1);
+    delay(1000);
+    setServoAngle(850, 1);
 }
 
 void plantMode (void) {
@@ -145,6 +179,11 @@ void plantMode (void) {
     printLCD(blankLine);
     instCtrl(0xD8);
     printLCD(plantingText);
+
+    // servo
+    setServoAngle(850, 0);
+    delay(100);
+    setServoAngle(1808, 0);
 }
 
 void travelMode (void) {
@@ -222,21 +261,10 @@ void initPWM(void) {
     CCPR2L = 64; // high 8 bits of duty cycle for CCP2
 }
 
-void setMotorSpeedLeft(unsigned int duty) {
-    if (duty > 1023) duty = 1023;
-    CCPR2L = duty >> 2;
-    CCP2CON = (CCP2CON & 0xCF) | ((duty & 0x03) << 4);
-}
-
-void setMotorSpeedRight(unsigned int duty) {
+void setMotorSpeed (unsigned int duty) {
     if (duty > 1023) duty = 1023;
     CCPR1L = duty >> 2;
     CCP1CON = (CCP1CON & 0xCF) | ((duty & 0x03) << 4);
-}
-
-void setMotorSpeed (unsigned int value) {
-    setMotorSpeedLeft(value);
-    setMotorSpeedRight(value);
 }
 
 void btnPress(void) {
@@ -255,9 +283,6 @@ void interruptConfig(void) {
 	OPTION_REG = 0xC4; // 1100 0100
 	INTE = 1; // int enable
 	INTF = 0; // int flag clear
-
-    PEIE = 1;
-    GIE = 1;
 }
 
 void interrupt ISR (void) {
@@ -272,6 +297,20 @@ void interrupt ISR (void) {
         }
 	}
 
+    if (TMR1IF) {
+        TMR1IF = 0;
+        TMR1 = TMR1_RELOAD;
+        if(servoPart) RE0 = 1;   // start of servo pulse
+        else RE1 = 1;
+        // schedule end of pulse
+        CCPR1 = TMR1_RELOAD + servo_pulse_us;
+    }
+    if (CCP1IF) {
+        CCP1IF = 0;
+        if(servoPart) RE0 = 0;   // end of pulse
+        else RE1 = 0;
+    }
+
     GIE = 1;
 }
 
@@ -285,6 +324,8 @@ void main(void) {
     setInitialDisplay();
     
     initPWM();
+
+    initServo();
 
     interruptConfig(); // rb0/int
 
@@ -304,6 +345,9 @@ void main(void) {
     setLedState(robotState); // idle mode initial
     stopMotors();
 
+    PEIE = 1;
+    GIE = 1;
+
     while (1) {
         // logic for changing robot state
         if (robotState != previousState) {
@@ -314,16 +358,28 @@ void main(void) {
                 printLCD(operationModeText);
 
                 while (intRowCount > 0  && robotState == 1) {
+                    if (robotState == 0) break;
                    
                     drillMode();
                     delay(100);
+
+                    if (robotState == 0) break;
                   
                     plantMode();
                     delay(100);
 
-                    // travelMode();
+                    if (robotState == 0) break;
+
+                    travelMode();
+                    delay(100);
+
+                    if (robotState == 0) break;
+
                     while (encoderCount < 2) {
                         travelMode();
+
+                        if (robotState == 0) break;
+
                         if (previousEncoderState != RB1 && RB1 == 1) {
                             encoderCount++;
                         }
@@ -338,17 +394,20 @@ void main(void) {
                     updateRowCount(intRowCount);
                 }
 
-                operationDone();
+                if (robotState == 0) {
+                    operationDone(); // manual stop
+                } else {
+                    operationDone(); // finished naturally
 
-                robotState = 0;
-                setLedState(robotState);
+                    robotState = 0;
+                    setLedState(robotState);
 
-                resetDisplay();
+                    rowsToPlant = 0; // reset input
 
-                rowsToPlant = 0; // reset input
-            }
-            else {
-                operationDone(); // manual stop via button
+                    updateRowCount(intRowCount);
+
+                    resetDisplay();
+                }
             }
 
             previousState = robotState;
