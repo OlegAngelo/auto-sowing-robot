@@ -217,7 +217,7 @@ void initPWM(void) {
     // start timer2
     TMR2ON = 1;
 
-    // set initial duty cycle to ~25%
+    // set initial duty cycle to ~50%
     CCPR1L = 64; // high 8 bits of duty cycle for CCP1
     CCPR2L = 64; // high 8 bits of duty cycle for CCP2
 }
@@ -316,17 +316,21 @@ void main(void) {
                 while (intRowCount > 0  && robotState == 1) {
                    
                     drillMode();
+                    delay(100);
                   
                     plantMode();
+                    delay(100);
 
                     // travelMode();
                     while (encoderCount < 2) {
                         travelMode();
-                        if(previousEncoderState != RB1 && RB1 == 1) {
+                        if (previousEncoderState != RB1 && RB1 == 1) {
                             encoderCount++;
                         }
+
                         previousEncoderState = RB1;
                     }
+
                     encoderCount = 0; //reset encoder count
 
                     intRowCount--;
