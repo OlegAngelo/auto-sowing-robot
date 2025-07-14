@@ -103,3 +103,7 @@ These values are based on:
 | \~5 kHz              | `62`            | More responsive, slightly less torque       |
 | \~10 kHz             | `31`            | Quieter, better for precision low-power use |
 
+### Images
+
+![Sample Image 1](./img/robot) ![Sample Image 2](./img/seed-plant)
+
