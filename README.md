@@ -77,7 +77,6 @@ Control features include:
 - No real-time soil nutrient analysis
 - Single-column operation only
 
-
 ## Additional Notes
 
 Recommended PR2 Settings for Motor Speeds (PIC16F877A + PWM)
@@ -105,5 +104,4 @@ These values are based on:
 
 ### Images
 
-![Sample Image 1](./img/robot) ![Sample Image 2](./img/seed-plant)
-
+![Robot Image](./img/robot.jpg) ![Seeds planted by the robot](./img/seed-plant.jpg)
