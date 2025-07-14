@@ -77,7 +77,6 @@ Control features include:
 - No real-time soil nutrient analysis
 - Single-column operation only
 
----
 
 ## Additional Notes
 
@@ -103,3 +102,4 @@ These values are based on:
 | -------------------- | --------------- | ------------------------------------------- |
 | \~5 kHz              | `62`            | More responsive, slightly less torque       |
 | \~10 kHz             | `31`            | Quieter, better for precision low-power use |
+
