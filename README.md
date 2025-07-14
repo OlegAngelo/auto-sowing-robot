@@ -77,4 +77,29 @@ Control features include:
 - No real-time soil nutrient analysis
 - Single-column operation only
 
----
+
+## Additional Notes
+
+Recommended PR2 Settings for Motor Speeds (PIC16F877A + PWM)
+These values are based on:
+
+- Timer2 Prescaler = 4
+- Fosc = 4 MHz
+- Target PWM frequency around 2.5 kHz for balanced performance
+
+### ✅ Motor Speed Duty CyclesPWM
+
+| Motor Speed (%) | `setMotorSpeed(x)`    | Duty Cycle (0–1023) | Suggested `PR2` | Approx. PWM Frequency | Notes                     |
+| --------------- | --------------------- | ------------------- | --------------- | --------------------- | ------------------------- |
+| 25%             | `setMotorSpeed(256)`  | 256                 | `124`           | \~2.5 kHz             | Smooth low-speed control  |
+| 50%             | `setMotorSpeed(512)`  | 512                 | `124`           | \~2.5 kHz             | Balanced performance      |
+| 75%             | `setMotorSpeed(768)`  | 768                 | `124`           | \~2.5 kHz             | Good for quick motion     |
+| 100%            | `setMotorSpeed(1023)` | 1023                | `124`           | \~2.5 kHz             | Max speed without buzzing |
+
+### ⚙️ Adjusting for Different PWM Frequencies
+
+| Target PWM Frequency | Suggested `PR2` | Notes                                       |
+| -------------------- | --------------- | ------------------------------------------- |
+| \~5 kHz              | `62`            | More responsive, slightly less torque       |
+| \~10 kHz             | `31`            | Quieter, better for precision low-power use |
+

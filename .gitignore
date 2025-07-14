@@ -1,0 +1,45 @@
+# MCU Build Artifacts
+*.obj
+*.cof
+*.d
+*.hex
+*.hxl
+*.p1
+*.pre
+*.sdb
+*.sym
+*.lst
+*.cmf
+*.as
+*.rlf
+
+# Explicitly do NOT ignore main.c and Proteus project file
+!main.c
+!proteus/auto-sowing-robot.pdsprj
+
+# Ignore other main.* build files (except main.c)
+main.*
+!main.c
+
+# Proteus Backups and temp workspace files
+proteus/Project Backups/
+proteus/*.workspace
+proteus/*.LAPTOP-*.workspace
+
+# Research PDF (optional to version)
+*.pdf
+
+# CPU temp file
+cpu=16f877a
+
+# Function list / temp files
+funclist
+l.obj
+
+# OS / Editor temp files
+*.log
+*.tmp
+*.bak
+*.swp
+.DS_Store
+Thumbs.db
